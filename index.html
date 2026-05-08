@@ -1363,7 +1363,7 @@ body::before{
   </div>
 
   <div style="display:flex;gap:10px;width:100%;margin-top:4px;">
-    <button class="btn" onclick="gotoBreedStart()">← 戻る</button>
+    <button class="btn" onclick="backToGame()">← 戻る</button>
     <button class="btn btn-primary" id="breeding-start-btn" onclick="startBreedingPair()" disabled style="flex:1;">
       💕 交尾させる
     </button>
@@ -1872,11 +1872,16 @@ body::before{
 
 
   <div id="shop-tab-insect-panel" class="shop-panel" style="display:none;">
-    <!-- 入荷中の希少種 -->
-    <div style="font-size:12px;color:var(--text-dim);padding:2px 0 8px;">✨ 入荷中の希少な虫</div>
+    <!-- 入荷中の虫（全種・レア度付き） -->
+    <div style="font-size:12px;color:var(--text-dim);padding:2px 0 4px;">🪲 入荷中の虫</div>
+    <div style="font-size:10px;color:var(--text-dim);padding:0 0 8px;line-height:1.6;">
+      <span style="color:#aaa;">■ N</span>　
+      <span style="color:#ce93d8;">■ SR</span>　
+      <span style="color:#ffd700;">■ SSR（超激レア）</span>
+    </div>
     <div id="shop-rare-insects" style="display:flex;flex-direction:column;gap:10px;"></div>
     <div id="shop-rare-empty" style="font-size:12px;color:var(--text-dim);padding:8px 0 14px;display:none;">
-      現在入荷中の希少な虫はいません。<br>ターンを進めると入荷することがあります。
+      現在入荷中の虫はいません。<br>ターンを進めると入荷することがあります。<br><span style="color:#ffd700;font-size:10px;">SSRは非常に低確率なので気長に待ちましょう！</span>
     </div>
     <div style="border-top:1px solid var(--panel-border);margin:8px 0 12px;"></div>
     <!-- 弱そうなムシ -->
@@ -2287,7 +2292,7 @@ const INSECTS = [
     sizeMin:        22,
     sizeMax:        70,
     gradeRates: { S: 0.9, A: 0.75, B: 0.5 },
-    basePrice: 30,
+    basePrice: 50,
   },
   {
     id: 'ougononi',
@@ -2318,7 +2323,7 @@ const INSECTS = [
     sizeMin:        30,
     sizeMax:        85,
     gradeRates: { S: 0.9, A: 0.75, B: 0.5 },
-    basePrice: 150,
+    basePrice: 300,
   },
   {
     id: 'mandiburarisu',
@@ -2404,7 +2409,7 @@ const INSECTS = [
     adultLifespan: 24,
     weightInit:     3,
     weightMax:      80,
-    weightGainBase: 4.0,
+    weightGainBase: 4.2,
     // 基準：幼虫体重40g → 成虫85mm、最小35mm、最大115mm
     sizeBase:       85,
     sizeBaseWeight: 40,
@@ -2508,32 +2513,61 @@ function saveItems() {
 
 
 // ============================================================
-// 入荷システム（ヘラクレス・コーカサスのオス/メス）
+// 入荷システム（全種対応・レア度付き）
 // ============================================================
-// stock = { insectId, isFemale, size, price, remainingTurns } | null
+// レア度定義
+// N    : カブトムシ、ノコギリ、ヒラタ       → 毎ターン高確率で入荷
+// R    : オオクワガタ、ニジイロ             → そこそこ入荷
+// SR   : オウゴンオニ、ギラファ、コーカサス → 低確率
+// SSR  : ヘラクレス、マンディ、パラワン     → ソシャゲSSR並みの激レア
+
+const SHOP_RARITY = {
+  // N（NORMAL）: カブトムシ、ノコギリ、ヒラタ
+  kabuto:         { rarity: 'N',   color: '#aaaaaa', chance: 0.80, priceRate: 1.5, label: 'NORMAL' },
+  nokogiri:       { rarity: 'N',   color: '#aaaaaa', chance: 0.75, priceRate: 1.5, label: 'NORMAL' },
+  hirata:         { rarity: 'N',   color: '#aaaaaa', chance: 0.70, priceRate: 1.5, label: 'NORMAL' },
+  // SR（SUPER RARE）: オオクワ、オウゴンオニ、ニジイロ
+  ookuwagata:     { rarity: 'SR',  color: '#ce93d8', chance: 0.12, priceRate: 3.0, label: 'SUPER RARE' },
+  ougononi:       { rarity: 'SR',  color: '#ce93d8', chance: 0.10, priceRate: 3.0, label: 'SUPER RARE' },
+  nijiiro:        { rarity: 'SR',  color: '#ce93d8', chance: 0.10, priceRate: 3.0, label: 'SUPER RARE' },
+  // SSR（超激レア）: ヘラクレス、コーカサス、パラワン、ギラファ、マンディ
+  hercules:       { rarity: 'SSR', color: '#ffd700', chance: 0.015, priceRate: 5.0, label: 'SSR' },
+  caucasus:       { rarity: 'SSR', color: '#ffd700', chance: 0.013, priceRate: 5.0, label: 'SSR' },
+  parawan:        { rarity: 'SSR', color: '#ffd700', chance: 0.012, priceRate: 5.0, label: 'SSR' },
+  girafa:         { rarity: 'SSR', color: '#ffd700', chance: 0.012, priceRate: 5.0, label: 'SSR' },
+  mandiburarisu:  { rarity: 'SSR', color: '#ffd700', chance: 0.010, priceRate: 5.0, label: 'SSR' },
+};
+
+const RARITY_BORDER = {
+  N:   'rgba(160,160,160,0.5)',
+  SR:  'rgba(206,147,216,0.8)',
+  SSR: 'rgba(255,215,0,0.9)',
+};
+const RARITY_GLOW = {
+  N:   'none',
+  SR:  '0 0 12px rgba(206,147,216,0.5)',
+  SSR: '0 0 20px rgba(255,215,0,0.6)',
+};
+
 let shopInsectStock = JSON.parse(localStorage.getItem('beetle_shop_stock') || 'null');
 
 function saveShopStock() {
   localStorage.setItem('beetle_shop_stock', JSON.stringify(shopInsectStock));
 }
 
-// 入荷対象種族（lockedのもの）
-const SHOP_RARE_INSECTS = ['hercules', 'caucasus', 'mandiburarisu', 'parawan'];
-// 入荷確率（ターンごと、オス/メスそれぞれ独立）
-const SHOP_STOCK_CHANCE = 0.10;
-
-// ターン進行時に呼び出す入荷チェック
+// ターン進行時に呼び出す入荷チェック（全種）
 function checkShopRestock() {
   if (!shopInsectStock) shopInsectStock = {};
 
-  SHOP_RARE_INSECTS.forEach(insId => {
+  Object.keys(SHOP_RARITY).forEach(insId => {
     const ins = INSECTS.find(i => i.id === insId);
     if (!ins) return;
+    const rarityDef = SHOP_RARITY[insId];
 
     const key1 = `${insId}_1`;
     const key2 = `${insId}_2`;
 
-    // 販売中の2匹それぞれ残りターン数を減らす（同時に処理するためループを使わない）
+    // 残りターン数を減らす
     [key1, key2].forEach(key => {
       if (shopInsectStock[key]) {
         shopInsectStock[key].remainingTurns--;
@@ -2543,21 +2577,33 @@ function checkShopRestock() {
       }
     });
 
-    // 両方とも在庫なし→入荷抽選（2匹同時に同ターンで登録）
-    if (!shopInsectStock[key1] && !shopInsectStock[key2] && Math.random() < SHOP_STOCK_CHANCE) {
-      const size = ins.sizeBase;
+    // 在庫なし→入荷抽選
+    if (!shopInsectStock[key1] && !shopInsectStock[key2] && Math.random() < rarityDef.chance) {
+      // SSR/SRはサイズにランダム幅を持たせる
+      let size;
+      if (rarityDef.rarity === 'SSR') {
+        size = Math.round(ins.sizeBase * (0.9 + Math.random() * 0.15));
+      } else if (rarityDef.rarity === 'SR') {
+        size = Math.round(ins.sizeBase * (0.85 + Math.random() * 0.2));
+      } else {
+        size = Math.round(ins.sizeMin + (ins.sizeMax - ins.sizeMin) * (0.3 + Math.random() * 0.4));
+      }
+      size = Math.min(ins.sizeMax, Math.max(ins.sizeMin, size));
       const grade = size >= ins.gradeS ? 'S' : size >= ins.gradeA ? 'A' : size >= ins.gradeB ? 'B' : 'C';
       const basePrice = calcPrice(ins, grade, size);
-      const shopPrice = basePrice * 2;
+      const shopPrice = Math.round(basePrice * rarityDef.priceRate);
       const adultWeight = Math.round(ins.sizeBaseWeight / (ins.largeBeetle ? 3 : 2));
+      // N/Rは販売期間短め、SR/SSRは長め
+      const remainingTurns = rarityDef.rarity === 'N' ? 3 : rarityDef.rarity === 'SR' ? 6 : 8;
       const stockData = {
         insectId: insId,
         isFemale: false,
         size,
         grade,
+        rarity: rarityDef.rarity,
         price: shopPrice,
         adultWeight,
-        remainingTurns: 6, // 販売期間は全種族6ヶ月固定
+        remainingTurns,
       };
       shopInsectStock[key1] = { ...stockData };
       shopInsectStock[key2] = { ...stockData };
@@ -2582,14 +2628,17 @@ function buyShopInsect(key) {
     return;
   }
 
-  showConfirm('🛒', `${ins.name}（オス）を購入しますか？`,
-    `<strong>${stock.price.toLocaleString()}円</strong>で購入します。<br>サイズ：${stock.size}mm（${stock.grade}ランク）`,
+  const rarityDef = SHOP_RARITY[stock.insectId];
+  const rarityLabel = rarityDef ? `【${rarityDef.rarity}】` : '';
+
+  showConfirm('🛒', `${ins.name}を購入しますか？`,
+    `${rarityLabel} <strong>${stock.price.toLocaleString()}円</strong>で購入します。<br>サイズ：${stock.size}mm（${stock.grade}ランク）`,
     () => {
       money -= stock.price;
       saveMoney();
       document.getElementById('shop-money').textContent = money;
 
-      // 1匹コレクションに追加
+      // コレクションに追加
       collection.push({
         id: Date.now(),
         nickname: ins.name,
@@ -2617,7 +2666,7 @@ function buyShopInsect(key) {
       saveShopStock();
 
       showModal('🎉', '購入完了！',
-        `<strong>${ins.name}（オス）</strong>を入手しました！<br>「育てた虫を見る」から確認できます。`
+        `<strong>${ins.name}</strong>を入手しました！<br>「育てた虫を見る」から確認できます。`
       );
       renderShopInsectPanel();
       updateShopOwned();
@@ -2625,50 +2674,85 @@ function buyShopInsect(key) {
   );
 }
 
-// 虫・卵タブの入荷部分を動的レンダリング
+// 虫・卵タブの入荷部分を動的レンダリング（全種・レア度対応）
 function renderShopInsectPanel() {
   const container = document.getElementById('shop-rare-insects');
   if (!container) return;
   container.innerHTML = '';
 
+  // レア度順に表示（SSR→SR→R→N）
+  const RARITY_ORDER = ['SSR', 'SR', 'R', 'N'];
   let hasAny = false;
-  SHOP_RARE_INSECTS.forEach(insId => {
-    const ins = INSECTS.find(i => i.id === insId);
-    if (!ins) return;
 
+  // 現在の在庫を収集してレア度順にソート
+  const stockEntries = [];
+  Object.keys(SHOP_RARITY).forEach(insId => {
     [1, 2].forEach(num => {
       const key = `${insId}_${num}`;
       const stock = shopInsectStock && shopInsectStock[key];
       if (!stock) return;
-      hasAny = true;
-
-      const imgSrc = ins.adultImgSrc;
-      const card = document.createElement('div');
-      card.className = 'shop-item-card';
-      card.style.borderColor = 'rgba(155,89,182,0.6)';
-      card.innerHTML = `
-        <div class="shop-item-top">
-          <div class="shop-item-img">
-            ${imgSrc ? `<img src="${imgSrc}" style="width:48px;height:48px;object-fit:contain;">` : `<span style="font-size:36px;">${ins.adultIcon}</span>`}
-          </div>
-          <div class="shop-item-info">
-            <div class="shop-item-name" style="display:flex;align-items:center;gap:6px;">
-              ${ins.name}
-              <span style="font-size:11px;color:#5dade2;border:1px solid #5dade2;border-radius:6px;padding:1px 6px;">オス ♂</span>
-            </div>
-            <div class="shop-item-price">${stock.price.toLocaleString()}円</div>
-            <div class="shop-item-desc">
-              サイズ：${stock.size}mm（${stock.grade}ランク）<br>
-              残り販売期間：<strong style="color:var(--amber);">${stock.remainingTurns}ヶ月</strong>
-            </div>
-          </div>
-        </div>
-        <div class="shop-buy-btns">
-          <button class="btn btn-primary" onclick="buyShopInsect('${key}')">購入する（${stock.price.toLocaleString()}円）</button>
-        </div>
-      `;
-      container.appendChild(card);
+      stockEntries.push({ key, insId, stock });
     });
+  });
+
+  stockEntries.sort((a, b) => {
+    return RARITY_ORDER.indexOf(a.stock.rarity) - RARITY_ORDER.indexOf(b.stock.rarity);
+  });
+
+  // レア度ごとにセクション分けして描画
+  let lastRarity = null;
+  stockEntries.forEach(({ key, insId, stock }) => {
+    const ins = INSECTS.find(i => i.id === insId);
+    if (!ins) return;
+    hasAny = true;
+    const rarityDef = SHOP_RARITY[insId];
+    const rarity = stock.rarity || rarityDef.rarity;
+    const color = RARITY_BORDER[rarity];
+    const glow = RARITY_GLOW[rarity];
+    const rarityColor = rarityDef.color;
+    const rarityLabel = rarityDef.label;
+
+    // レア度ヘッダー
+    if (rarity !== lastRarity) {
+      lastRarity = rarity;
+      const header = document.createElement('div');
+      header.style.cssText = `font-size:11px;font-weight:bold;color:${rarityColor};margin-top:${stockEntries[0].stock.rarity === rarity ? '0' : '8px'};margin-bottom:4px;letter-spacing:2px;text-shadow:0 0 6px ${rarityColor};`;
+      header.textContent = `★ ${rarityLabel}`;
+      container.appendChild(header);
+    }
+
+    const imgSrc = ins.adultImgSrc;
+
+    // SSRはきらめきアニメ用クラス
+    const ssrStyle = rarity === 'SSR' ? 'animation:titleFloat 2s ease-in-out infinite;' : '';
+
+    const card = document.createElement('div');
+    card.className = 'shop-item-card';
+    card.style.cssText = `border-color:${color};box-shadow:${glow};`;
+    card.innerHTML = `
+      <div class="shop-item-top">
+        <div class="shop-item-img" style="${ssrStyle}">
+          ${imgSrc ? `<img src="${imgSrc}" style="width:48px;height:48px;object-fit:contain;">` : `<span style="font-size:36px;">${ins.adultIcon}</span>`}
+        </div>
+        <div class="shop-item-info">
+          <div class="shop-item-name" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+            <span style="font-size:11px;font-weight:bold;color:${rarityColor};border:1px solid ${rarityColor};border-radius:4px;padding:1px 5px;letter-spacing:1px;">${rarity}</span>
+            ${ins.name}
+          </div>
+          <div class="shop-item-price" style="color:${rarity === 'SSR' ? '#ffd700' : 'var(--amber)'};">${stock.price.toLocaleString()}円</div>
+          <div class="shop-item-desc">
+            サイズ：${stock.size}mm（${stock.grade}ランク）<br>
+            残り販売期間：<strong style="color:var(--amber);">${stock.remainingTurns}ヶ月</strong>
+            ${rarity === 'SSR' ? '<br><span style="color:#ffd700;font-size:10px;">✨ 超激レア入荷中！</span>' : ''}
+            ${rarity === 'SR' ? '<br><span style="color:#ce93d8;font-size:10px;">💜 希少種入荷中！</span>' : ''}
+          </div>
+        </div>
+      </div>
+      <div class="shop-buy-btns">
+        <button class="btn ${rarity === 'SSR' ? '' : 'btn-primary'}" style="${rarity === 'SSR' ? 'border-color:#ffd700;color:#ffd700;background:linear-gradient(135deg,#5a4a00,#8b7000,#5a4a00);' : ''}" onclick="buyShopInsect('${key}')">購入する（${stock.price.toLocaleString()}円）</button>
+      </div>
+    `;
+    container.appendChild(card);
   });
 
   // 在庫なし表示
@@ -2966,6 +3050,7 @@ function resetData() {
       localStorage.removeItem('beetle_first_bonus_shown');
       localStorage.removeItem('beetle_game_year');
       localStorage.removeItem('beetle_game_month');
+      localStorage.removeItem('beetle_ever_bred');
       document.getElementById('title-money').textContent = money;
       updateShopWeakInsect();
       showModal('✅', 'リセット完了', 'データをリセットしました！<br>次の起動時にスタートボーナス<strong>5000円</strong>をプレゼント🎉');
@@ -3941,7 +4026,13 @@ function gotoItems() {
 }
 
 function gotoBreedStart() {
-  showScreen('breed-start-screen');
+  // 初回（まだ1匹も育てたことがない）は卵選択へ、それ以降は繁殖へ直行
+  const hasEverBred = !!localStorage.getItem('beetle_ever_bred');
+  if (!hasEverBred) {
+    gotoEggSelect();
+  } else {
+    gotoBreeding();
+  }
 }
 
 function gotoBreeding() {
@@ -4125,6 +4216,9 @@ function startBreeding(geneBonus = 1.0, parents = null) {
   const ins = INSECTS.find(i => i.id === selectedEggId);
   const i = pendingSlot;
 
+  // 初回育成フラグを保存
+  localStorage.setItem('beetle_ever_bred', '1');
+
   slots[i] = {
     insect: ins,
     stage: 'egg',
@@ -4204,9 +4298,13 @@ function advanceTurn() {
   // --- パーツ争奪戦の発生チェック（弱そうなムシ入手後のみ） ---
   // 虫のしらせイベントが既にキューにある場合は重複しない
   const hasRivalUnlock = eventQueue.some(e => e.type === 'rival_unlock');
-  if (hasRaidFighter() && !hasRivalUnlock && Math.random() < 0.20) {
+  if (hasRaidFighter() && !hasRivalUnlock && Math.random() < 0.10) {
     eventQueue.push({ type: 'parts_raid' });
   }
+
+  // イベントの優先順位でソート：result/death → modal → rival_unlock → parts_raid
+  const PRIORITY = { result: 0, death: 1, modal: 2, rival_unlock: 3, parts_raid: 4 };
+  eventQueue.sort((a, b) => (PRIORITY[a.type] ?? 9) - (PRIORITY[b.type] ?? 9));
 
   // イベントがあれば順番に処理
   if (eventQueue.length > 0) {
@@ -4786,6 +4884,37 @@ function renameCollectionInsect(id) {
     saveCollection();
     closeModalSilent();
     gotoCollection();
+  });
+}
+
+function renameFighter() {
+  if (!weakInsect) return;
+  document.getElementById('modal-icon').textContent = '✏️';
+  document.getElementById('modal-title').textContent = 'ニックネームを変更';
+  document.getElementById('modal-body').innerHTML = `
+    <div style="margin-bottom:8px;font-size:13px;color:var(--text-dim);">現在：<strong style="color:var(--gold);">${weakInsect.nickname}</strong></div>
+    <input id="rename-input" type="text" maxlength="12" value="${weakInsect.nickname}"
+      style="width:100%;background:rgba(0,0,0,0.3);border:1.5px solid var(--panel-border);border-radius:8px;
+             color:var(--text-light);font-family:'DotGothic16',monospace;font-size:15px;padding:10px 12px;outline:none;">
+  `;
+  document.getElementById('modal-btns').innerHTML = `
+    <button class="btn" onclick="closeModalSilent()" style="flex:1;">キャンセル</button>
+    <button class="btn btn-primary" id="rename-ok-btn" style="flex:1;">決定</button>
+  `;
+  document.getElementById('modal-overlay').classList.remove('hidden');
+  const input = document.getElementById('rename-input');
+  input.focus();
+  input.select();
+  document.getElementById('rename-ok-btn').addEventListener('click', () => {
+    const newName = input.value.trim();
+    if (!newName) return;
+    weakInsect.nickname = newName;
+    saveWeakInsect();
+    // collectionのisFighterエントリも同期
+    const fc = collection.find(c => c.isFighter);
+    if (fc) { fc.nickname = newName; saveCollection(); }
+    closeModalSilent();
+    gotoEquipScreen();
   });
 }
 
@@ -6206,7 +6335,7 @@ function checkRivalUnlock() {
   if (!hasRaidFighter()) return;
   const hidden = RIVALS.filter(r => rivalState[r.id] && !rivalState[r.id].visible);
   if (hidden.length === 0) return;
-  if (Math.random() >= 0.30) return;
+  if (Math.random() >= 0.20) return;
   // ① 新登場の敵をランダムに選ぶ
   const newRival = hidden[Math.floor(Math.random() * hidden.length)];
   // ② 欠損させるパーツをランダムに選ぶ（選ぶだけ、まだ削除しない）
